@@ -56,6 +56,28 @@
         .month-selector {
             max-width: 200px;
         }
+        .import-instructions {
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        .import-template-link {
+            cursor: pointer;
+            color: #0d6efd;
+            text-decoration: underline;
+        }
+        .duplicate-error {
+            color: #dc3545;
+            font-size: 0.875rem;
+            margin-top: 0.25rem;
+            display: none;
+        }
+        .form-actions {
+            margin-top: 1rem;
+            padding-top: 1rem;
+            border-top: 1px solid #dee2e6;
+        }
     </style>
 </head>
 <body>
@@ -99,16 +121,12 @@
                                 <option value="CHEQUE">CHEQUE</option>
                             </select>
                         </div>
-                        <div class="col-md-2 mb-3 d-flex align-items-end">
-                            <button type="submit" class="btn btn-primary me-2" id="saveBtn">Save</button>
-                            <button type="button" class="btn btn-outline-secondary" id="cancelEdit" style="display:none;">Cancel</button>
-                        </div>
                     </div>
                     <div class="row">
                         <div class="col-md-4 mb-3">
-                            <label for="month" class="form-label">Month</label>
-                            <select class="form-select month-selector" id="month">
-                                <option value="">All months</option>
+                            <label for="month" class="form-label">Month*</label>
+                            <select class="form-select month-selector" id="month" required>
+                                <option value="">Select month</option>
                                 <option value="January">January</option>
                                 <option value="February">February</option>
                                 <option value="March">March</option>
@@ -122,9 +140,51 @@
                                 <option value="November">November</option>
                                 <option value="December">December</option>
                             </select>
+                            <div class="duplicate-error" id="duplicateError">
+                                A property with this name already exists for the selected month!
+                            </div>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label for="selectProperty" class="form-label">Quick Select Property</label>
+                            <select class="form-select" id="selectProperty" onchange="fillPropertyForm(this.value)">
+                                <option value="">Select a property to edit</option>
+                                <!-- Options will be populated by JavaScript -->
+                            </select>
                         </div>
                     </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary me-2" id="saveBtn">Save</button>
+                        <button type="button" class="btn btn-outline-secondary" id="cancelEdit" style="display:none;">Cancel</button>
+                    </div>
                 </form>
+            </div>
+        </div>
+        
+        <!-- Import Section -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5>Import Properties</h5>
+            </div>
+            <div class="card-body">
+                <div class="import-instructions">
+                    <h6>How to import properties:</h6>
+                    <ol>
+                        <li>Download the <span class="import-template-link" onclick="downloadTemplate()">Excel template</span></li>
+                        <li>Fill in your property data</li>
+                        <li>Upload the file using the button below</li>
+                    </ol>
+                    <p class="mb-0"><small>Note: Importing will add new properties without deleting existing ones.</small></p>
+                </div>
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <button class="btn btn-outline-primary me-2" id="importBtn">Import Properties</button>
+                        <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" style="display: none;">
+                    </div>
+                    <div>
+                        <button class="btn btn-sm btn-outline-success me-2" id="exportExcelBtn">Export to Excel</button>
+                        <button class="btn btn-sm btn-outline-secondary" id="exportJsonBtn">Export to JSON</button>
+                    </div>
+                </div>
             </div>
         </div>
         
@@ -159,10 +219,7 @@
                 <div class="d-flex justify-content-between align-items-center mt-3">
                     <div id="propertyCount">0 properties found</div>
                     <div>
-                        <button class="btn btn-sm btn-outline-success me-2" id="exportExcelBtn">Export to Excel</button>
-                        <button class="btn btn-sm btn-outline-secondary me-2" id="exportJsonBtn">Export to JSON</button>
-                        <button class="btn btn-sm btn-outline-primary" id="importBtn">Import Data</button>
-                        <input type="file" id="fileInput" accept=".json,.xlsx,.xls,.csv" style="display: none;">
+                        <button class="btn btn-sm btn-outline-info" id="showAllBtn">Show All Properties</button>
                     </div>
                 </div>
             </div>
@@ -203,10 +260,13 @@
             const fileInput = document.getElementById('fileInput');
             const propertyCount = document.getElementById('propertyCount');
             const monthSelector = document.getElementById('month');
+            const selectProperty = document.getElementById('selectProperty');
+            const showAllBtn = document.getElementById('showAllBtn');
             const qrModal = new bootstrap.Modal(document.getElementById('qrModal'));
             const qrCodeDisplay = document.getElementById('qrCodeDisplay');
             const qrPropertyInfo = document.getElementById('qrPropertyInfo');
             const downloadQRBtn = document.getElementById('downloadQR');
+            const duplicateError = document.getElementById('duplicateError');
             
             let properties = JSON.parse(localStorage.getItem('properties')) || [];
             let editId = null;
@@ -218,7 +278,10 @@
 
             function init() {
                 renderProperties();
+                updatePropertyDropdown();
                 setupEventListeners();
+                // Focus on month selector by default
+                monthSelector.focus();
             }
 
             function setupEventListeners() {
@@ -232,6 +295,37 @@
                 fileInput.addEventListener('change', importData);
                 monthSelector.addEventListener('change', filterByMonth);
                 downloadQRBtn.addEventListener('click', downloadQRCode);
+                showAllBtn.addEventListener('click', showAllProperties);
+                
+                // Check for duplicates when property name or month changes
+                document.getElementById('propertyName').addEventListener('change', checkForDuplicate);
+                monthSelector.addEventListener('change', checkForDuplicate);
+            }
+
+            function checkForDuplicate() {
+                const propertyName = document.getElementById('propertyName').value.trim();
+                const month = document.getElementById('month').value;
+                const propertyId = document.getElementById('propertyId').value;
+                
+                if (!propertyName || !month) {
+                    duplicateError.style.display = 'none';
+                    return;
+                }
+                
+                // Check if another property with same name and month exists (excluding current edit)
+                const isDuplicate = properties.some(property => 
+                    property.name.toLowerCase() === propertyName.toLowerCase() && 
+                    property.month === month &&
+                    property.id.toString() !== propertyId
+                );
+                
+                if (isDuplicate) {
+                    duplicateError.style.display = 'block';
+                    saveBtn.disabled = true;
+                } else {
+                    duplicateError.style.display = 'none';
+                    saveBtn.disabled = false;
+                }
             }
 
             function handleFormSubmit(e) {
@@ -241,7 +335,13 @@
                 const monthlyRent = parseFloat(document.getElementById('monthlyRent').value);
                 const status = document.getElementById('status').value;
                 const paymentMethod = document.getElementById('paymentMethod').value;
-                const month = document.getElementById('month').value || 'Not specified';
+                const month = document.getElementById('month').value;
+                
+                // Final duplicate check before saving
+                checkForDuplicate();
+                if (saveBtn.disabled) {
+                    return;
+                }
                 
                 if (editId !== null) {
                     // Update existing property
@@ -279,6 +379,9 @@
                 propertyForm.reset();
                 monthSelector.value = '';
                 renderProperties(currentFilter);
+                updatePropertyDropdown();
+                // Return focus to month selector
+                monthSelector.focus();
             }
 
             function renderProperties(filteredProperties = null) {
@@ -343,6 +446,25 @@
                 });
             }
 
+            function updatePropertyDropdown() {
+                selectProperty.innerHTML = '<option value="">Select a property to edit</option>';
+                properties.forEach(property => {
+                    const option = document.createElement('option');
+                    option.value = property.id;
+                    option.textContent = `${property.name} (${property.month}) - QR ${property.rent}`;
+                    selectProperty.appendChild(option);
+                });
+            }
+
+            window.fillPropertyForm = function(propertyId) {
+                if (!propertyId) return;
+                
+                const property = properties.find(p => p.id === parseInt(propertyId));
+                if (property) {
+                    handleEdit(property.id);
+                }
+            };
+
             function showQRModal(id, info) {
                 const property = properties.find(p => p.id === id);
                 if (!property) return;
@@ -381,10 +503,14 @@
                     document.getElementById('status').value = property.status;
                     document.getElementById('paymentMethod').value = property.paymentMethod || '';
                     document.getElementById('month').value = property.month || '';
+                    document.getElementById('selectProperty').value = property.id;
                     
                     editId = property.id;
                     saveBtn.textContent = 'Update';
                     cancelEditBtn.style.display = 'inline-block';
+                    
+                    // Check for duplicates (except this one)
+                    checkForDuplicate();
                     
                     // Scroll to form
                     document.getElementById('propertyForm').scrollIntoView({ behavior: 'smooth' });
@@ -396,6 +522,7 @@
                     properties = properties.filter(p => p.id !== id);
                     saveProperties();
                     renderProperties(currentFilter);
+                    updatePropertyDropdown();
                     
                     // If deleting the property being edited, reset form
                     if (editId === id) {
@@ -439,12 +566,24 @@
                 renderProperties();
             }
 
+            function showAllProperties() {
+                searchInput.value = '';
+                monthSelector.value = '';
+                currentFilter = null;
+                renderProperties();
+            }
+
             function cancelEdit() {
                 propertyForm.reset();
                 monthSelector.value = '';
+                document.getElementById('selectProperty').value = '';
                 editId = null;
                 saveBtn.textContent = 'Save';
+                saveBtn.disabled = false;
                 cancelEditBtn.style.display = 'none';
+                duplicateError.style.display = 'none';
+                // Return focus to month selector
+                monthSelector.focus();
             }
 
             function saveProperties() {
@@ -491,58 +630,98 @@
                 showAlert('Data exported to JSON successfully!', 'success');
             }
 
+            window.downloadTemplate = function() {
+                // Create template data
+                const templateData = [
+                    {
+                        'Property Name': 'Example Property 1',
+                        'Monthly Rent': 5000,
+                        'Status': 'Pending',
+                        'Payment Method': 'CASH',
+                        'Month': 'January'
+                    },
+                    {
+                        'Property Name': 'Example Property 2',
+                        'Monthly Rent': 7500,
+                        'Status': 'Paid',
+                        'Payment Method': 'CHEQUE',
+                        'Month': 'February'
+                    }
+                ];
+
+                // Create worksheet
+                const ws = XLSX.utils.json_to_sheet(templateData);
+                
+                // Create workbook
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, "Properties");
+                
+                // Export to Excel file
+                XLSX.writeFile(wb, "property_import_template.xlsx");
+                
+                showAlert('Template downloaded successfully!', 'success');
+            };
+
             function importData(e) {
                 const file = e.target.files[0];
                 if (!file) return;
                 
-                if (confirm('Importing data will overwrite your current properties. Continue?')) {
-                    const reader = new FileReader();
-                    reader.onload = function(e) {
-                        try {
-                            let importedData;
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    try {
+                        let importedData;
+                        
+                        if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+                            // Handle Excel file
+                            const data = new Uint8Array(e.target.result);
+                            const workbook = XLSX.read(data, { type: 'array' });
+                            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                            importedData = XLSX.utils.sheet_to_json(firstSheet);
                             
-                            if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
-                                // Handle Excel file
-                                const data = new Uint8Array(e.target.result);
-                                const workbook = XLSX.read(data, { type: 'array' });
-                                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-                                importedData = XLSX.utils.sheet_to_json(firstSheet);
-                                
-                                // Convert Excel data to our property format
-                                importedData = importedData.map(item => ({
-                                    id: Date.now() + Math.floor(Math.random() * 1000),
-                                    name: item['Property Name'] || '',
-                                    rent: item['Monthly Rent'] || 0,
-                                    status: item['Status'] || 'Pending',
-                                    paymentMethod: item['Payment Method'] || '',
-                                    month: item['Month'] || '',
-                                    createdAt: new Date().toISOString(),
-                                    updatedAt: new Date().toISOString()
-                                }));
-                            } else {
-                                // Handle JSON file
-                                importedData = JSON.parse(e.target.result);
-                            }
-                            
-                            if (Array.isArray(importedData)) {
-                                properties = importedData;
-                                saveProperties();
-                                renderProperties();
-                                showAlert('Data imported successfully!', 'success');
-                            } else {
-                                throw new Error('Invalid data format');
-                            }
-                        } catch (error) {
-                            showAlert('Error importing data. Please check the file format.', 'danger');
-                            console.error(error);
+                            // Convert Excel data to our property format
+                            importedData = importedData.map(item => ({
+                                id: Date.now() + Math.floor(Math.random() * 1000),
+                                name: item['Property Name'] || '',
+                                rent: item['Monthly Rent'] || 0,
+                                status: item['Status'] || 'Pending',
+                                paymentMethod: item['Payment Method'] || '',
+                                month: item['Month'] || '',
+                                createdAt: new Date().toISOString(),
+                                updatedAt: new Date().toISOString()
+                            }));
+                        } else {
+                            // Handle JSON file
+                            importedData = JSON.parse(e.target.result);
                         }
-                    };
-                    
-                    if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
-                        reader.readAsArrayBuffer(file);
-                    } else {
-                        reader.readAsText(file);
+                        
+                        if (Array.isArray(importedData)) {
+                            // Filter out duplicates (same property name and month)
+                            const newProperties = importedData.filter(newProp => 
+                                !properties.some(existingProp => 
+                                    existingProp.name.toLowerCase() === newProp.name.toLowerCase() && 
+                                    existingProp.month === newProp.month
+                                )
+                            );
+                            
+                            // Add new properties without deleting existing ones
+                            properties = [...properties, ...newProperties];
+                            saveProperties();
+                            renderProperties();
+                            updatePropertyDropdown();
+                            showAlert(`${newProperties.length} properties imported successfully! ${importedData.length - newProperties.length} duplicates skipped.`, 'success');
+                        } else {
+                            throw new Error('Invalid data format');
+                        }
+                    } catch (error) {
+                        showAlert('Error importing data. Please check the file format.', 'danger');
+                        console.error(error);
                     }
+                };
+                
+                if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+                    reader.readAsArrayBuffer(file);
+                } else {
+                    reader.readAsText(file);
                 }
                 
                 // Reset file input
