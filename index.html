@@ -78,10 +78,116 @@
             padding-top: 1rem;
             border-top: 1px solid #dee2e6;
         }
+        /* Login Modal Styles */
+        #loginModal .modal-content {
+            border-radius: 10px;
+        }
+        #loginModal .modal-header {
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+        #loginModal .modal-title {
+            font-weight: 600;
+        }
+        #loginForm {
+            padding: 0 20px;
+        }
+        #forgotPassword {
+            color: #6c757d;
+            text-decoration: none;
+        }
+        #forgotPassword:hover {
+            color: #0d6efd;
+        }
+        .navbar-brand {
+            font-weight: bold;
+        }
+        .logout-btn {
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
-    <div class="container mt-5">
+    <!-- Login Modal -->
+    <div class="modal fade" id="loginModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Login to Property Management</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="loginForm">
+                        <div class="mb-3">
+                            <label for="loginEmail" class="form-label">Email address</label>
+                            <input type="email" class="form-control" id="loginEmail" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="loginPassword" class="form-label">Password</label>
+                            <input type="password" class="form-control" id="loginPassword" required>
+                        </div>
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="rememberMe">
+                            <label class="form-check-label" for="rememberMe">Remember me</label>
+                        </div>
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary">Login</button>
+                        </div>
+                    </form>
+                    <div class="text-center mt-3">
+                        <a href="#" id="forgotPassword">Forgot password?</a>
+                        <br>
+                        <a href="#" id="createAccountLink">Create new account</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Registration Modal -->
+    <div class="modal fade" id="registerModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Create New Account</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="registerForm">
+                        <div class="mb-3">
+                            <label for="registerEmail" class="form-label">Email address</label>
+                            <input type="email" class="form-control" id="registerEmail" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="registerPassword" class="form-label">Password</label>
+                            <input type="password" class="form-control" id="registerPassword" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="registerPassword2" class="form-label">Confirm Password</label>
+                            <input type="password" class="form-control" id="registerPassword2" required>
+                        </div>
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-success">Create Account</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-4" id="mainNav" style="display: none;">
+        <div class="container">
+            <a class="navbar-brand" href="#">Property Management</a>
+            <div class="d-flex align-items-center">
+                <span class="text-white me-3" id="welcomeUser"></span>
+                <button class="btn btn-sm btn-light logout-btn" id="logoutBtn">Logout</button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content (will be moved to authWrapper) -->
+    <div class="container mt-3" id="mainContainer">
         <h1 class="text-center mb-4">Property Management</h1>
         
         <!-- Add Property Form -->
@@ -246,8 +352,31 @@
         </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
+            // Authentication state
+            let isAuthenticated = false;
+            let authToken = null;
+            let currentUser = null;
+
+            // DOM Elements
+            const authWrapper = document.createElement('div');
+            authWrapper.id = 'authWrapper';
+            authWrapper.style.display = 'none';
+            document.body.appendChild(authWrapper);
+
+            const mainContainer = document.getElementById('mainContainer');
+            authWrapper.appendChild(mainContainer);
+
+            const loginModal = new bootstrap.Modal(document.getElementById('loginModal'));
+            const loginForm = document.getElementById('loginForm');
+            const forgotPasswordLink = document.getElementById('forgotPassword');
+            const logoutBtn = document.getElementById('logoutBtn');
+            const mainNav = document.getElementById('mainNav');
+            const welcomeUser = document.getElementById('welcomeUser');
+
+            // Property Management Elements
             const propertyForm = document.getElementById('propertyForm');
             const propertyTable = document.getElementById('propertyTable');
             const searchInput = document.getElementById('searchInput');
@@ -277,14 +406,171 @@
             init();
 
             function init() {
+                setupEventListeners();
+                checkAuthentication();
+            }
+
+            // Authentication Functions
+            function checkAuthentication() {
+                const savedToken = localStorage.getItem('propertyAuthToken');
+                const rememberMe = localStorage.getItem('rememberMe') === 'true';
+                
+                if (savedToken && rememberMe) {
+                    verifyToken(savedToken)
+                        .then(valid => {
+                            if (valid) {
+                                isAuthenticated = true;
+                                authToken = savedToken;
+                                currentUser = JSON.parse(localStorage.getItem('currentUser'));
+                                showAuthenticatedUI();
+                                initializePropertyManagement();
+                            } else {
+                                showLoginModal();
+                            }
+                        })
+                        .catch(() => showLoginModal());
+                } else {
+                    showLoginModal();
+                }
+            }
+
+            function verifyToken(token) {
+                // In a real app, this would call your backend
+                return new Promise(resolve => {
+                    try {
+                        // Mock verification - in real app, call your backend
+                        const userData = JSON.parse(atob(token.split('.')[1]));
+                        resolve(!!userData.email);
+                    } catch {
+                        resolve(false);
+                    }
+                });
+            }
+
+            function showLoginModal() {
+                authWrapper.style.display = 'none';
+                mainNav.style.display = 'none';
+                loginModal.show();
+            }
+
+            function showAuthenticatedUI() {
+                authWrapper.style.display = 'block';
+                mainNav.style.display = 'flex';
+                welcomeUser.textContent = `Welcome, ${currentUser?.email || 'User'}`;
+                loginModal.hide();
+            }
+
+            function initializePropertyManagement() {
                 renderProperties();
                 updatePropertyDropdown();
-                setupEventListeners();
-                // Focus on month selector by default
                 monthSelector.focus();
             }
 
+            // Login form submission
+            loginForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const email = document.getElementById('loginEmail').value;
+                const password = document.getElementById('loginPassword').value;
+                const rememberMe = document.getElementById('rememberMe').checked;
+                
+                authenticateUser(email, password)
+                    .then(({ token, user }) => {
+                        authToken = token;
+                        isAuthenticated = true;
+                        currentUser = user;
+                        
+                        if (rememberMe) {
+                            localStorage.setItem('propertyAuthToken', token);
+                            localStorage.setItem('rememberMe', 'true');
+                            localStorage.setItem('currentUser', JSON.stringify(user));
+                        }
+                        
+                        showAuthenticatedUI();
+                        initializePropertyManagement();
+                    })
+                    .catch(error => {
+                        showAlert('Invalid email or password', 'danger');
+                    });
+            });
+
+            function authenticateUser(email, password) {
+                return new Promise((resolve, reject) => {
+                    // Get users from localStorage or use default
+                    let users = JSON.parse(localStorage.getItem('users')) || [
+                        { id: 1, email: 'admin@property.com', password: 'admin123', role: 'admin' },
+                        { id: 2, email: 'user@property.com', password: 'user123', role: 'user' }
+                    ];
+
+                    const user = users.find(u => u.email === email && u.password === password);
+
+                    if (user) {
+                        // Mock JWT token generation
+                        const token = btoa(JSON.stringify({
+                            userId: user.id || Date.now(),
+                            email: user.email,
+                            role: user.role || 'user'
+                        }));
+
+                        setTimeout(() => resolve({
+                            token,
+                            user: {
+                                id: user.id || Date.now(),
+                                email: user.email,
+                                role: user.role || 'user'
+                            }
+                        }), 500);
+                    } else {
+                        setTimeout(() => reject(new Error('Authentication failed')), 500);
+                    }
+                });
+            }
+
+            // Logout handler
+            logoutBtn.addEventListener('click', function() {
+                localStorage.removeItem('propertyAuthToken');
+                localStorage.removeItem('rememberMe');
+                localStorage.removeItem('currentUser');
+                isAuthenticated = false;
+                authToken = null;
+                currentUser = null;
+                showLoginModal();
+            });
+
+            // Forgot password handler
+            forgotPasswordLink.addEventListener('click', function(e) {
+                e.preventDefault();
+                const email = document.getElementById('loginEmail').value;
+                
+                if (!email) {
+                    showAlert('Please enter your email address first', 'warning');
+                    return;
+                }
+                
+                resetPassword(email)
+                    .then(() => {
+                        showAlert('Password reset instructions sent to your email', 'success');
+                    })
+                    .catch(() => {
+                        showAlert('Error sending reset instructions', 'danger');
+                    });
+            });
+
+            function resetPassword(email) {
+                // In a real app, this would call your backend
+                return new Promise(resolve => {
+                    setTimeout(() => resolve(), 1000);
+                });
+            }
+
+            // Property Management Functions
             function setupEventListeners() {
+                // Authentication listeners
+                loginForm.addEventListener('submit', handleLoginSubmit);
+                forgotPasswordLink.addEventListener('click', handleForgotPassword);
+                logoutBtn.addEventListener('click', handleLogout);
+                
+                // Property management listeners
                 propertyForm.addEventListener('submit', handleFormSubmit);
                 searchInput.addEventListener('input', handleSearch);
                 clearSearchBtn.addEventListener('click', clearSearch);
@@ -297,7 +583,6 @@
                 downloadQRBtn.addEventListener('click', downloadQRCode);
                 showAllBtn.addEventListener('click', showAllProperties);
                 
-                // Check for duplicates when property name or month changes
                 document.getElementById('propertyName').addEventListener('change', checkForDuplicate);
                 monthSelector.addEventListener('change', checkForDuplicate);
             }
@@ -312,7 +597,6 @@
                     return;
                 }
                 
-                // Check if another property with same name and month exists (excluding current edit)
                 const isDuplicate = properties.some(property => 
                     property.name.toLowerCase() === propertyName.toLowerCase() && 
                     property.month === month &&
@@ -337,14 +621,12 @@
                 const paymentMethod = document.getElementById('paymentMethod').value;
                 const month = document.getElementById('month').value;
                 
-                // Final duplicate check before saving
                 checkForDuplicate();
                 if (saveBtn.disabled) {
                     return;
                 }
                 
                 if (editId !== null) {
-                    // Update existing property
                     const index = properties.findIndex(p => p.id === editId);
                     if (index !== -1) {
                         properties[index] = {
@@ -360,7 +642,6 @@
                     }
                     cancelEdit();
                 } else {
-                    // Add new property
                     const newProperty = {
                         id: Date.now(),
                         name: propertyName,
@@ -380,7 +661,6 @@
                 monthSelector.value = '';
                 renderProperties(currentFilter);
                 updatePropertyDropdown();
-                // Return focus to month selector
                 monthSelector.focus();
             }
 
@@ -409,10 +689,8 @@
                     </tr>
                 `).join('');
 
-                // Update property count
                 propertyCount.textContent = `${propertiesToRender.length} ${propertiesToRender.length === 1 ? 'property' : 'properties'} found`;
                 
-                // Add event listeners to edit and delete buttons
                 document.querySelectorAll('.edit-btn').forEach(btn => {
                     btn.addEventListener('click', () => handleEdit(parseInt(btn.getAttribute('data-id'))));
                 });
@@ -421,7 +699,6 @@
                     btn.addEventListener('click', () => handleDelete(parseInt(btn.getAttribute('data-id'))));
                 });
 
-                // Generate QR codes
                 propertiesToRender.forEach(property => {
                     const qrContainer = document.getElementById(`qr-${property.id}`);
                     if (qrContainer) {
@@ -437,7 +714,6 @@
                     }
                 });
 
-                // Add click event to QR codes
                 document.querySelectorAll('.qr-code').forEach(qr => {
                     qr.addEventListener('click', () => showQRModal(
                         parseInt(qr.getAttribute('data-id')),
@@ -458,7 +734,6 @@
 
             window.fillPropertyForm = function(propertyId) {
                 if (!propertyId) return;
-                
                 const property = properties.find(p => p.id === parseInt(propertyId));
                 if (property) {
                     handleEdit(property.id);
@@ -509,10 +784,7 @@
                     saveBtn.textContent = 'Update';
                     cancelEditBtn.style.display = 'inline-block';
                     
-                    // Check for duplicates (except this one)
                     checkForDuplicate();
-                    
-                    // Scroll to form
                     document.getElementById('propertyForm').scrollIntoView({ behavior: 'smooth' });
                 }
             }
@@ -524,7 +796,6 @@
                     renderProperties(currentFilter);
                     updatePropertyDropdown();
                     
-                    // If deleting the property being edited, reset form
                     if (editId === id) {
                         cancelEdit();
                     }
@@ -580,9 +851,7 @@
                 editId = null;
                 saveBtn.textContent = 'Save';
                 saveBtn.disabled = false;
-                cancelEditBtn.style.display = 'none';
                 duplicateError.style.display = 'none';
-                // Return focus to month selector
                 monthSelector.focus();
             }
 
@@ -591,7 +860,6 @@
             }
 
             function exportToExcel() {
-                // Prepare data for Excel export
                 const dataToExport = (currentFilter || properties).map(property => ({
                     'Property Name': property.name,
                     'Monthly Rent': property.rent,
@@ -602,14 +870,9 @@
                     'Updated At': new Date(property.updatedAt).toLocaleString()
                 }));
 
-                // Create worksheet
                 const ws = XLSX.utils.json_to_sheet(dataToExport);
-                
-                // Create workbook
                 const wb = XLSX.utils.book_new();
                 XLSX.utils.book_append_sheet(wb, ws, "Properties");
-                
-                // Export to Excel file
                 const fileName = `properties_${new Date().toISOString().slice(0,10)}.xlsx`;
                 XLSX.writeFile(wb, fileName);
                 
@@ -619,9 +882,7 @@
             function exportToJson() {
                 const dataStr = JSON.stringify(currentFilter || properties, null, 2);
                 const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
-                
                 const exportFileDefaultName = `properties-${new Date().toISOString().slice(0,10)}.json`;
-                
                 const linkElement = document.createElement('a');
                 linkElement.setAttribute('href', dataUri);
                 linkElement.setAttribute('download', exportFileDefaultName);
@@ -631,7 +892,6 @@
             }
 
             window.downloadTemplate = function() {
-                // Create template data
                 const templateData = [
                     {
                         'Property Name': 'Example Property 1',
@@ -649,14 +909,9 @@
                     }
                 ];
 
-                // Create worksheet
                 const ws = XLSX.utils.json_to_sheet(templateData);
-                
-                // Create workbook
                 const wb = XLSX.utils.book_new();
                 XLSX.utils.book_append_sheet(wb, ws, "Properties");
-                
-                // Export to Excel file
                 XLSX.writeFile(wb, "property_import_template.xlsx");
                 
                 showAlert('Template downloaded successfully!', 'success');
@@ -672,13 +927,11 @@
                         let importedData;
                         
                         if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
-                            // Handle Excel file
                             const data = new Uint8Array(e.target.result);
                             const workbook = XLSX.read(data, { type: 'array' });
                             const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
                             importedData = XLSX.utils.sheet_to_json(firstSheet);
                             
-                            // Convert Excel data to our property format
                             importedData = importedData.map(item => ({
                                 id: Date.now() + Math.floor(Math.random() * 1000),
                                 name: item['Property Name'] || '',
@@ -690,12 +943,10 @@
                                 updatedAt: new Date().toISOString()
                             }));
                         } else {
-                            // Handle JSON file
                             importedData = JSON.parse(e.target.result);
                         }
                         
                         if (Array.isArray(importedData)) {
-                            // Filter out duplicates (same property name and month)
                             const newProperties = importedData.filter(newProp => 
                                 !properties.some(existingProp => 
                                     existingProp.name.toLowerCase() === newProp.name.toLowerCase() && 
@@ -703,7 +954,6 @@
                                 )
                             );
                             
-                            // Add new properties without deleting existing ones
                             properties = [...properties, ...newProperties];
                             saveProperties();
                             renderProperties();
@@ -724,7 +974,6 @@
                     reader.readAsText(file);
                 }
                 
-                // Reset file input
                 fileInput.value = '';
             }
 
@@ -739,14 +988,105 @@
                 
                 document.body.appendChild(alertDiv);
                 
-                // Auto-remove after 3 seconds
                 setTimeout(() => {
                     alertDiv.classList.remove('show');
                     setTimeout(() => alertDiv.remove(), 150);
                 }, 3000);
             }
+
+            // Authentication handlers
+            function handleLoginSubmit(e) {
+                e.preventDefault();
+                const email = document.getElementById('loginEmail').value;
+                const password = document.getElementById('loginPassword').value;
+                const rememberMe = document.getElementById('rememberMe').checked;
+                
+                authenticateUser(email, password)
+                    .then(({ token, user }) => {
+                        authToken = token;
+                        isAuthenticated = true;
+                        currentUser = user;
+                        
+                        if (rememberMe) {
+                            localStorage.setItem('propertyAuthToken', token);
+                            localStorage.setItem('rememberMe', 'true');
+                            localStorage.setItem('currentUser', JSON.stringify(user));
+                        }
+                        
+                        showAuthenticatedUI();
+                        initializePropertyManagement();
+                    })
+                    .catch(error => {
+                        showAlert('Invalid email or password', 'danger');
+                    });
+            }
+
+            function handleForgotPassword(e) {
+                e.preventDefault();
+                const email = document.getElementById('loginEmail').value;
+                
+                if (!email) {
+                    showAlert('Please enter your email address first', 'warning');
+                    return;
+                }
+                
+                resetPassword(email)
+                    .then(() => {
+                        showAlert('Password reset instructions sent to your email', 'success');
+                    })
+                    .catch(() => {
+                        showAlert('Error sending reset instructions', 'danger');
+                    });
+            }
+
+            function handleLogout() {
+                localStorage.removeItem('propertyAuthToken');
+                localStorage.removeItem('rememberMe');
+                localStorage.removeItem('currentUser');
+                isAuthenticated = false;
+                authToken = null;
+                currentUser = null;
+                showLoginModal();
+            }
+
+            // Add after DOMContentLoaded
+            const registerModal = new bootstrap.Modal(document.getElementById('registerModal'));
+            const createAccountLink = document.getElementById('createAccountLink');
+            const registerForm = document.getElementById('registerForm');
+
+            createAccountLink.addEventListener('click', function(e) {
+                e.preventDefault();
+                registerModal.show();
+            });
+
+            // Registration logic (mocked, stores in localStorage)
+            registerForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                const email = document.getElementById('registerEmail').value.trim();
+                const password = document.getElementById('registerPassword').value;
+                const password2 = document.getElementById('registerPassword2').value;
+
+                if (password !== password2) {
+                    showAlert('Passwords do not match', 'danger');
+                    return;
+                }
+
+                // Get users from localStorage or use empty array
+                let users = JSON.parse(localStorage.getItem('users')) || [];
+
+                // Check if user already exists
+                if (users.some(u => u.email === email)) {
+                    showAlert('User already exists', 'danger');
+                    return;
+                }
+
+                // Add new user
+                users.push({ email, password }); // In real app, hash the password!
+                localStorage.setItem('users', JSON.stringify(users));
+                showAlert('Account created! You can now log in.', 'success');
+                registerModal.hide();
+            });
         });
     </script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
